@@ -1,0 +1,8 @@
+User-agent: *
+Disallow: /source/
+Disallow: /pages/
+Disallow: /thumbs/
+Disallow: /data/
+
+# Note: robots.txt is not access control. It only guides crawlers.
+# It does not prevent direct URL access to files.

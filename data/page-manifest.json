@@ -1,0 +1,107 @@
+{
+  "document": {
+    "title": "AWC Publications",
+    "pageCount": 1053,
+    "generatedAt": "2026-06-16T22:37:24.728132+00:00"
+  },
+  "pages": {
+    "1": {
+      "page": 1,
+      "image": "pages/page-0001.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0001.webp"
+    },
+    "49": {
+      "page": 49,
+      "image": "pages/page-0049.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0049.webp"
+    },
+    "116": {
+      "page": 116,
+      "image": "pages/page-0116.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0116.webp"
+    },
+    "156": {
+      "page": 156,
+      "image": "pages/page-0156.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0156.webp"
+    },
+    "165": {
+      "page": 165,
+      "image": "pages/page-0165.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0165.webp"
+    },
+    "214": {
+      "page": 214,
+      "image": "pages/page-0214.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0214.webp"
+    },
+    "304": {
+      "page": 304,
+      "image": "pages/page-0304.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0304.webp"
+    },
+    "456": {
+      "page": 456,
+      "image": "pages/page-0456.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0456.webp"
+    },
+    "507": {
+      "page": 507,
+      "image": "pages/page-0507.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0507.webp"
+    },
+    "658": {
+      "page": 658,
+      "image": "pages/page-0658.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0658.webp"
+    },
+    "666": {
+      "page": 666,
+      "image": "pages/page-0666.webp",
+      "width": 1406,
+      "height": 1988,
+      "thumb": "thumbs/page-0666.webp"
+    },
+    "708": {
+      "page": 708,
+      "image": "pages/page-0708.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0708.webp"
+    },
+    "910": {
+      "page": 910,
+      "image": "pages/page-0910.webp",
+      "width": 1445,
+      "height": 1870,
+      "thumb": "thumbs/page-0910.webp"
+    },
+    "1053": {
+      "page": 1053,
+      "image": "pages/page-1053.webp",
+      "width": 3301,
+      "height": 4402,
+      "thumb": "thumbs/page-1053.webp"
+    }
+  }
+}
