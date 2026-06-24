@@ -11,12 +11,18 @@ from pathlib import Path
 
 import fitz
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PDF_PATH = PROJECT_ROOT / "source" / "AWC_Publications_v17_bookmarked_citation_outline.pdf"
-OUTLINE_PATH = PROJECT_ROOT / "data" / "outline.json"
+from constants import (
+    DOCUMENT_TITLE,
+    EXPECTED_CHILD_COUNT,
+    EXPECTED_PARENT_COUNT,
+    EXPECTED_PARENT_PAGES,
+    EXPECTED_TOTAL_COUNT,
+    SOURCE_FILENAME,
+)
 
-SOURCE_FILENAME = "AWC_Publications_v17_bookmarked_citation_outline.pdf"
-DOCUMENT_TITLE = "AWC Publications"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PDF_PATH = PROJECT_ROOT / "source" / SOURCE_FILENAME
+OUTLINE_PATH = PROJECT_ROOT / "data" / "outline.json"
 
 CITATION_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 CITATION_SPLIT_RE = re.compile(r"\s*[,;]\s*(?=(?:J\.|Vol\.|pp\.|p\.|doi:|\d{4}))", re.IGNORECASE)
@@ -104,6 +110,27 @@ def build_outline(toc: list) -> list[dict]:
     return outline
 
 
+def validate_counts(outline: list[dict]) -> None:
+    parent_count = len(outline)
+    child_count = sum(len(sec.get("children", [])) for sec in outline)
+    total_count = parent_count + child_count
+    actual_parent_pages = [sec.get("page") for sec in outline]
+
+    checks = [
+        (parent_count, EXPECTED_PARENT_COUNT, "parent sections"),
+        (child_count, EXPECTED_CHILD_COUNT, "child publications"),
+        (total_count, EXPECTED_TOTAL_COUNT, "total outline entries"),
+    ]
+    for actual, expected, label in checks:
+        if actual != expected:
+            print(f"  WARN: {label}: got {actual}, expected {expected}")
+
+    if actual_parent_pages != EXPECTED_PARENT_PAGES:
+        print(f"  WARN: parent section start pages differ from expected")
+        print(f"         got:      {actual_parent_pages}")
+        print(f"         expected: {EXPECTED_PARENT_PAGES}")
+
+
 def main() -> int:
     if not PDF_PATH.exists():
         print(f"FAIL: Source PDF not found at {PDF_PATH}")
@@ -138,6 +165,10 @@ def main() -> int:
     print(f"  Parent sections: {parent_count}")
     print(f"  Child publications: {child_count}")
     print(f"  Total outline entries: {parent_count + child_count}")
+
+    print("\nValidation:")
+    validate_counts(outline)
+
     return 0
 
 

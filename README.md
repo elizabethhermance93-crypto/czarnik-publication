@@ -142,6 +142,82 @@ Prints PASS / WARN / FAIL for PDF, outline counts, parent start pages, and rende
 
 ---
 
+## Phase 2: Full local build
+
+Phase 2 turns the prototype into a working local viewer using the real PDF, full bookmark structure, rendered page images, thumbnails, and QA checks.
+
+### Replace the source PDF
+
+Place (or replace) the PDF at:
+
+```
+source/AWC_Publications_v17_bookmarked_citation_outline.pdf
+```
+
+Use the **same filename** when swapping in a corrected edition. All scripts read page count and bookmarks from the file at runtime — nothing is hardcoded.
+
+After replacing the PDF, re-run the full pipeline below.
+
+### Phase 2 build commands
+
+From the project root:
+
+```bash
+pip install -r scripts/requirements.txt
+python scripts/inspect_pdf.py
+python scripts/extract_outline.py
+python scripts/render_pages.py --qa
+python scripts/generate_manifest.py
+python scripts/qa_check.py
+python -m http.server 8000
+```
+
+Open [http://localhost:8000](http://localhost:8000)
+
+**What each step does:**
+
+| Command | Output |
+|---------|--------|
+| `inspect_pdf.py` | QA report: file size, SHA-256, page count, metadata, bookmark counts, page sizes |
+| `extract_outline.py` | `data/outline.json` — hierarchical TOC with 191 entries (13 sections + 178 publications) |
+| `render_pages.py --qa` | 14 QA page images in `pages/` and `thumbs/` (section starts + final page) |
+| `generate_manifest.py` | `data/page-manifest.json` — image paths and dimensions |
+| `qa_check.py` | PASS / WARN / FAIL report for the full build |
+
+### Render all pages (full build)
+
+QA mode renders only bookmark start pages plus the final page. For the complete viewer experience:
+
+```bash
+python scripts/render_pages.py --all
+python scripts/generate_manifest.py
+python scripts/qa_check.py
+```
+
+**Time and disk:** Full rendering of ~1053 pages at 170 DPI produces hundreds of WebP files. Expect significant processing time and disk usage (often several GB). The script is safe to interrupt and resume — it skips existing files unless you pass `--force`.
+
+**Useful render options:**
+
+```bash
+python scripts/render_pages.py --pages 1,49,116          # specific pages
+python scripts/render_pages.py --qa                      # QA set + final page
+python scripts/render_pages.py --all                     # every page
+python scripts/render_pages.py --all --force             # re-render everything
+python scripts/render_pages.py --qa --dpi 170 --quality 88 --thumb-width 260
+```
+
+Outputs:
+- `pages/page-0001.webp` — full pages
+- `thumbs/page-0001.webp` — thumbnails (~260px wide)
+
+If WebP save fails, the script falls back to PNG and prints a warning.
+
+### Security reminder
+
+**Do not** place the source PDF in the public web root when deploying. The viewer uses pre-rendered images and JSON navigation only — it never links to or downloads the source PDF.
+
+---
+
 ## Run locally
 
 From the project root:

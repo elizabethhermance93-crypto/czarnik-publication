@@ -10,8 +10,16 @@ from pathlib import Path
 
 import fitz
 
+from constants import (
+    EXPECTED_CHILD_COUNT,
+    EXPECTED_PARENT_COUNT,
+    EXPECTED_PARENT_PAGES,
+    EXPECTED_TOTAL_COUNT,
+    SOURCE_FILENAME,
+)
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PDF_PATH = PROJECT_ROOT / "source" / "AWC_Publications_v17_bookmarked_citation_outline.pdf"
+PDF_PATH = PROJECT_ROOT / "source" / SOURCE_FILENAME
 
 
 def sha256_file(path: Path) -> str:
@@ -22,13 +30,19 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def count_toc_levels(toc: list) -> tuple[int, int, int]:
-    """Return total entries, parent (level 1), child (level 2+) counts."""
+def count_toc_levels(toc: list) -> tuple[int, dict[int, int]]:
+    """Return total entries and per-level counts."""
     if not toc:
-        return 0, 0, 0
-    parents = sum(1 for entry in toc if entry[0] == 1)
-    children = sum(1 for entry in toc if entry[0] >= 2)
-    return len(toc), parents, children
+        return 0, {}
+    levels: Counter[int] = Counter()
+    for entry in toc:
+        levels[entry[0]] += 1
+    return len(toc), dict(sorted(levels.items()))
+
+
+def format_page_size(doc: fitz.Document, page_index: int) -> str:
+    rect = doc[page_index].rect
+    return f"{rect.width:.1f} x {rect.height:.1f} pt"
 
 
 def summarize_page_sizes(doc: fitz.Document) -> str:
@@ -75,13 +89,28 @@ def main() -> int:
         print(f"Needs password: {'yes' if doc.needs_pass else 'no'}")
 
     toc = doc.get_toc()
-    total, parents, children = count_toc_levels(toc)
+    total, level_counts = count_toc_levels(toc)
     print(f"\n--- Table of Contents ---")
     print(f"Total bookmark entries: {total}")
-    print(f"Parent bookmarks (level 1): {parents}")
-    print(f"Child bookmarks (level 2+): {children}")
+    for level, count in level_counts.items():
+        label = "parent" if level == 1 else f"level {level}"
+        print(f"  Level {level} ({label}): {count}")
+    deeper = sum(c for lvl, c in level_counts.items() if lvl > 2)
+    if deeper:
+        print(f"  Deeper levels (3+): {deeper}")
+
+    print(f"\n--- Expected Structure (reference) ---")
+    print(f"  Expected parent sections: {EXPECTED_PARENT_COUNT}")
+    print(f"  Expected child publications: {EXPECTED_CHILD_COUNT}")
+    print(f"  Expected total entries: {EXPECTED_TOTAL_COUNT}")
+    print(f"  Expected parent start pages: {EXPECTED_PARENT_PAGES}")
 
     print(f"\n--- Page Sizes ---")
+    if page_count > 0:
+        print(f"  First page: {format_page_size(doc, 0)}")
+        if page_count > 1:
+            print(f"  Final page: {format_page_size(doc, page_count - 1)}")
+    print("  Summary:")
     print(summarize_page_sizes(doc))
 
     doc.close()

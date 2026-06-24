@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -48,7 +48,7 @@
           <button type="button" class="btn-toolbar btn-toolbar-text dropdown-toggle" id="btnFitMenu" data-bs-toggle="dropdown" aria-expanded="false" aria-label="Fit width options">
             <span id="fitModeLabel">Fit Width</span>
           </button>
-          <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="btnFitMenu">
+          <ul class="dropdown-menu dropdown-menu-dark viewer-dropdown" aria-labelledby="btnFitMenu">
             <li><button type="button" class="dropdown-item" data-fit="fitWidth">Fit Width</button></li>
             <li><button type="button" class="dropdown-item" data-fit="fitPage">Fit Page</button></li>
             <li><button type="button" class="dropdown-item" data-fit="actual">Actual Size (1:1)</button></li>
@@ -60,7 +60,11 @@
       </div>
 
       <div class="toolbar-section toolbar-right">
-        <button type="button" class="btn-toolbar btn-future" id="btnSearch" aria-label="Search (future)" title="Search (future)" disabled>
+        <button type="button" class="btn-toolbar" id="btnThemeToggle" aria-label="Toggle light/dark theme" title="Toggle theme">
+          <i class="bi bi-sun-fill theme-icon-light" aria-hidden="true"></i>
+          <i class="bi bi-moon-fill theme-icon-dark d-none" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="btn-toolbar" id="btnSearch" aria-label="Search table of contents" title="Search table of contents">
           <i class="bi bi-search" aria-hidden="true"></i>
         </button>
         <button type="button" class="btn-toolbar btn-bookmark-toggle active" id="btnToggleBookmarks" aria-label="Toggle bookmarks panel" title="Table of Contents" aria-pressed="true">
@@ -70,8 +74,24 @@
           <button type="button" class="btn-toolbar" id="btnMoreMenu" data-bs-toggle="dropdown" aria-expanded="false" aria-label="More options">
             <i class="bi bi-three-dots-vertical" aria-hidden="true"></i>
           </button>
-          <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end" aria-labelledby="btnMoreMenu">
-            <li><span class="dropdown-item-text text-muted">More options (future)</span></li>
+          <ul class="dropdown-menu dropdown-menu-dark dropdown-menu-end viewer-dropdown" aria-labelledby="btnMoreMenu">
+            <li><h6 class="dropdown-header">Appearance</h6></li>
+            <li>
+              <button type="button" class="dropdown-item" data-theme-choice="light">
+                <i class="bi bi-sun me-2" aria-hidden="true"></i>Light theme
+              </button>
+            </li>
+            <li>
+              <button type="button" class="dropdown-item" data-theme-choice="dark">
+                <i class="bi bi-moon me-2" aria-hidden="true"></i>Dark theme
+              </button>
+            </li>
+            <li><hr class="dropdown-divider"></li>
+            <li>
+              <button type="button" class="dropdown-item" id="menuToggleThumbnails">
+                <i class="bi bi-layout-sidebar me-2" aria-hidden="true"></i>Toggle thumbnails
+              </button>
+            </li>
           </ul>
         </div>
       </div>
@@ -106,19 +126,13 @@
             <i class="bi bi-chevron-left" aria-hidden="true"></i>
           </button>
 
-          <div class="page-stage" id="pageStage">
-            <div class="page-loading" id="pageLoading" aria-live="polite">
+          <div class="page-stream-wrap">
+            <div class="page-stream-loading" id="pageStreamLoading" aria-live="polite">
               <div class="spinner-border spinner-accent" role="status">
-                <span class="visually-hidden">Loading page…</span>
+                <span class="visually-hidden">Loading document…</span>
               </div>
             </div>
-            <div class="page-missing d-none" id="pageMissing">
-              <i class="bi bi-file-earmark-image" aria-hidden="true"></i>
-              <p>Page image not rendered yet. Render this page using the local render script.</p>
-            </div>
-            <div class="page-image-wrap d-none" id="pageImageWrap">
-              <img class="page-image" id="pageImage" alt="" draggable="false">
-            </div>
+            <div class="page-stream zoom-fit-width" id="pageStream" aria-label="Document pages"></div>
           </div>
 
           <button type="button" class="floating-nav floating-nav-next d-none d-lg-flex" id="btnFloatNext" aria-label="Next page">
@@ -134,6 +148,11 @@
           <button type="button" class="btn-panel-close" id="btnCloseBookmarks" aria-label="Close table of contents">
             <i class="bi bi-x-lg" aria-hidden="true"></i>
           </button>
+        </div>
+        <div class="bookmark-search-wrap">
+          <label class="visually-hidden" for="bookmarkSearch">Filter table of contents</label>
+          <i class="bi bi-search bookmark-search-icon" aria-hidden="true"></i>
+          <input type="search" class="bookmark-search-input" id="bookmarkSearch" placeholder="Filter sections…" autocomplete="off" spellcheck="false">
         </div>
         <div class="bookmark-tree" id="bookmarkTreeDesktop" role="tree" aria-label="Document outline"></div>
       </aside>
@@ -160,6 +179,11 @@
         <button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button>
       </div>
       <div class="offcanvas-body p-0">
+        <div class="bookmark-search-wrap bookmark-search-wrap-mobile">
+          <label class="visually-hidden" for="bookmarkSearchMobile">Filter table of contents</label>
+          <i class="bi bi-search bookmark-search-icon" aria-hidden="true"></i>
+          <input type="search" class="bookmark-search-input" id="bookmarkSearchMobile" placeholder="Filter sections…" autocomplete="off" spellcheck="false">
+        </div>
         <div class="bookmark-tree" id="bookmarkTreeMobile" role="tree" aria-label="Document outline"></div>
       </div>
     </div>

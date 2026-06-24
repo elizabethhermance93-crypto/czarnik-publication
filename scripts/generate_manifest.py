@@ -12,14 +12,15 @@ from pathlib import Path
 import fitz
 from PIL import Image
 
+from constants import DOCUMENT_TITLE, SOURCE_FILENAME
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PDF_PATH = PROJECT_ROOT / "source" / "AWC_Publications_v17_bookmarked_citation_outline.pdf"
+PDF_PATH = PROJECT_ROOT / "source" / SOURCE_FILENAME
 PAGES_DIR = PROJECT_ROOT / "pages"
 THUMBS_DIR = PROJECT_ROOT / "thumbs"
 MANIFEST_PATH = PROJECT_ROOT / "data" / "page-manifest.json"
 
-DOCUMENT_TITLE = "AWC Publications"
-PAGE_FILE_RE = re.compile(r"^page-(\d{4})\.(webp|png)$", re.IGNORECASE)
+PAGE_FILE_RE = re.compile(r"^page-(\d{4})\.(webp|png|jpe?g)$", re.IGNORECASE)
 
 
 def get_page_count() -> int:
@@ -48,7 +49,7 @@ def image_dimensions(path: Path) -> tuple[int, int]:
 
 
 def public_path(relative: Path) -> str:
-    return relative.as_posix()
+    return "/" + relative.as_posix()
 
 
 def main() -> int:

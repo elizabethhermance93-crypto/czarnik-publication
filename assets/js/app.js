@@ -10,6 +10,10 @@
   const ZOOM_MAX = 400;
   const ZOOM_DEFAULT = 100;
   const MOBILE_BREAKPOINT = 768;
+  const SCROLL_SYNC_LOCK_MS = 600;
+  const DEFAULT_PAGE_ASPECT = 1445 / 1870;
+
+  const THEME_STORAGE_KEY = 'viewer-theme';
 
   const state = {
     currentPage: 1,
@@ -30,7 +34,15 @@
     naturalWidth: 0,
     naturalHeight: 0,
     loadToken: 0,
+    bookmarkSearchQuery: '',
+    theme: 'light',
+    scrollSyncLocked: false,
+    pageStreamBuilt: false,
   };
+
+  let pageLoadObserver = null;
+  let pageTrackObserver = null;
+  let scrollRafId = 0;
 
   const els = {};
 
@@ -58,6 +70,14 @@
     } else {
       setTimeout(fn, 100);
     }
+  }
+
+  function validatePageInput(input) {
+    const raw = String(input.value).trim();
+    const n = parseInt(raw, 10);
+    const invalid = raw === '' || Number.isNaN(n) || n < 1 || n > state.pageCount;
+    input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+    return !invalid;
   }
 
   function clampPage(page) {
@@ -241,54 +261,269 @@
     }
   }
 
-  function applyZoomToImage() {
-    const img = els.pageImage;
-    img.classList.remove('fit-width', 'fit-page', 'actual-size', 'custom-zoom');
+  function getDefaultPageSize() {
+    if (state.manifest?.pages) {
+      for (const key of Object.keys(state.manifest.pages)) {
+        const entry = state.manifest.pages[key];
+        if (entry?.width && entry?.height) {
+          return { width: entry.width, height: entry.height };
+        }
+      }
+    }
+    return { width: 1445, height: 1870 };
+  }
 
+  function zoomStreamClass() {
     switch (state.fitMode) {
-      case 'fitWidth':
-        img.classList.add('fit-width');
-        img.style.width = '';
-        img.style.height = '';
-        break;
       case 'fitPage':
-        img.classList.add('fit-page');
+        return 'zoom-fit-page';
+      case 'actual':
+        return 'zoom-actual';
+      case 'custom':
+        return 'zoom-custom';
+      default:
+        return 'zoom-fit-width';
+    }
+  }
+
+  function applyZoomToStream() {
+    if (!els.pageStream) return;
+
+    els.pageStream.classList.remove('zoom-fit-width', 'zoom-fit-page', 'zoom-actual', 'zoom-custom');
+    els.pageStream.classList.add(zoomStreamClass());
+
+    if (state.fitMode === 'actual' || state.fitMode === 'custom') {
+      const scale = state.fitMode === 'actual' ? 1 : state.zoomLevel / 100;
+      els.pageStream.querySelectorAll('.page-slot .page-image').forEach((img) => {
+        const slot = img.closest('.page-slot');
+        const pageNum = parseInt(slot?.dataset.page || '0', 10);
+        const entry = getManifestEntry(pageNum);
+        const w = entry?.width || img.naturalWidth || getDefaultPageSize().width;
+        const h = entry?.height || img.naturalHeight || getDefaultPageSize().height;
+        img.style.width = `${Math.round(w * scale)}px`;
+        img.style.height = `${Math.round(h * scale)}px`;
+      });
+    } else {
+      els.pageStream.querySelectorAll('.page-slot .page-image').forEach((img) => {
         img.style.width = '';
         img.style.height = '';
-        break;
-      case 'actual':
-        img.classList.add('actual-size');
-        if (state.naturalWidth) {
-          img.style.width = `${state.naturalWidth}px`;
-          img.style.height = `${state.naturalHeight}px`;
-        }
-        break;
-      case 'custom':
-        img.classList.add('custom-zoom');
-        if (state.naturalWidth) {
-          const scale = state.zoomLevel / 100;
-          img.style.width = `${Math.round(state.naturalWidth * scale)}px`;
-          img.style.height = `${Math.round(state.naturalHeight * scale)}px`;
-        }
-        break;
-      default:
-        img.classList.add('fit-width');
+      });
     }
   }
 
-  function showPageState(which) {
-    els.pageLoading.classList.toggle('d-none', which !== 'loading');
-    els.pageMissing.classList.toggle('d-none', which !== 'missing');
-    els.pageImageWrap.classList.toggle('d-none', which !== 'image');
+  function setStreamLoading(loading) {
+    if (els.pageStreamLoading) {
+      els.pageStreamLoading.classList.toggle('d-none', !loading);
+    }
+    if (els.pageStream) {
+      els.pageStream.classList.toggle('d-none', loading);
+    }
   }
 
-  function showMissingPage() {
-    const p = els.pageMissing.querySelector('p');
-    if (p) {
-      p.textContent =
-        `Page ${state.currentPage} image not rendered yet. Render this page using the local render script.`;
+  function createMissingSlotContent(pageNum) {
+    const wrap = document.createElement('div');
+    wrap.className = 'page-slot-missing';
+    wrap.innerHTML = `
+      <i class="bi bi-file-earmark-image" aria-hidden="true"></i>
+      <p>Page image not rendered yet.</p>
+      <span class="page-slot-label">Page ${pageNum}</span>
+    `;
+    return wrap;
+  }
+
+  function hydratePageSlot(slot) {
+    if (!slot || slot.dataset.hydrated === 'true') return;
+
+    const pageNum = parseInt(slot.dataset.page, 10);
+    const entry = getManifestEntry(pageNum);
+    const inner = slot.querySelector('.page-slot-inner');
+    if (!inner) return;
+
+    slot.dataset.hydrated = 'true';
+
+    inner.style.aspectRatio = '';
+    inner.style.minHeight = '';
+
+    if (!entry?.image) {
+      inner.appendChild(createMissingSlotContent(pageNum));
+      return;
     }
-    showPageState('missing');
+
+    const img = document.createElement('img');
+    img.className = 'page-image';
+    img.alt = `Page ${pageNum} of ${state.pageCount}`;
+    img.draggable = false;
+    img.decoding = 'async';
+    img.addEventListener('contextmenu', (e) => e.preventDefault());
+    img.addEventListener('load', () => {
+      applyZoomToStream();
+    });
+    img.addEventListener('error', () => {
+      inner.innerHTML = '';
+      inner.appendChild(createMissingSlotContent(pageNum));
+    });
+
+    const imageUrl = resolveAssetUrl(entry.image);
+    img.src = imageUrl;
+    if (state.imageCache.has(imageUrl)) {
+      img.loading = 'eager';
+    } else {
+      img.loading = 'lazy';
+    }
+    inner.appendChild(img);
+  }
+
+  function buildPageStream() {
+    if (!els.pageStream) return;
+
+    setStreamLoading(true);
+    els.pageStream.innerHTML = '';
+
+    const defaultSize = getDefaultPageSize();
+    const aspect = defaultSize.width / defaultSize.height;
+
+    for (let pageNum = 1; pageNum <= state.pageCount; pageNum += 1) {
+      const slot = document.createElement('section');
+      slot.className = 'page-slot';
+      slot.id = `page-slot-${pageNum}`;
+      slot.dataset.page = String(pageNum);
+      slot.setAttribute('aria-label', `Page ${pageNum}`);
+
+      const inner = document.createElement('div');
+      inner.className = 'page-slot-inner';
+      inner.style.aspectRatio = String(aspect);
+      inner.style.minHeight = '120px';
+
+      slot.appendChild(inner);
+      els.pageStream.appendChild(slot);
+    }
+
+    setupPageObservers();
+    applyZoomToStream();
+    state.pageStreamBuilt = true;
+    setStreamLoading(false);
+  }
+
+  function setupPageObservers() {
+    if (pageLoadObserver) pageLoadObserver.disconnect();
+    if (pageTrackObserver) pageTrackObserver.disconnect();
+
+    pageLoadObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            hydratePageSlot(entry.target);
+          }
+        }
+      },
+      {
+        root: els.readingPane,
+        rootMargin: '900px 0px',
+        threshold: 0,
+      }
+    );
+
+    pageTrackObserver = new IntersectionObserver(
+      (entries) => {
+        if (state.scrollSyncLocked) return;
+
+        let bestPage = null;
+        let bestRatio = 0;
+
+        for (const entry of entries) {
+          if (entry.intersectionRatio > bestRatio) {
+            bestRatio = entry.intersectionRatio;
+            bestPage = parseInt(entry.target.dataset.page, 10);
+          }
+        }
+
+        if (bestPage && bestRatio > 0.15) {
+          setCurrentPageFromScroll(bestPage);
+        }
+      },
+      {
+        root: els.readingPane,
+        rootMargin: '-20% 0px -55% 0px',
+        threshold: [0, 0.15, 0.35, 0.55, 0.75, 1],
+      }
+    );
+
+    els.pageStream.querySelectorAll('.page-slot').forEach((slot) => {
+      pageLoadObserver.observe(slot);
+      pageTrackObserver.observe(slot);
+    });
+  }
+
+  function setCurrentPageFromScroll(page) {
+    const target = clampPage(page);
+    if (target === state.currentPage) return;
+
+    state.currentPage = target;
+
+    const bm = findBookmarkForPage(target);
+    if (bm) {
+      setActiveBookmark(bm.id);
+      updateExpandedSectionsUI();
+      updateBookmarkHighlight();
+      scrollActiveBookmarkIntoView();
+    }
+
+    updatePageDisplays();
+    updateThumbnailHighlight();
+    updateUrlHash();
+    prefetchAdjacent();
+  }
+
+  function scrollToPageSlot(page, smooth) {
+    const slot = document.getElementById(`page-slot-${page}`);
+    if (!slot || !els.readingPane) return;
+
+    state.scrollSyncLocked = true;
+    slot.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' });
+
+    window.setTimeout(() => {
+      state.scrollSyncLocked = false;
+    }, smooth ? SCROLL_SYNC_LOCK_MS : 80);
+  }
+
+  function handleReadingPaneScroll() {
+    if (state.scrollSyncLocked || !els.readingPane) return;
+
+    if (scrollRafId) cancelAnimationFrame(scrollRafId);
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = 0;
+      const pane = els.readingPane;
+      const centerY = pane.scrollTop + pane.clientHeight * 0.35;
+      const slots = els.pageStream?.querySelectorAll('.page-slot');
+      if (!slots?.length) return;
+
+      let bestPage = state.currentPage;
+      let bestDistance = Infinity;
+
+      slots.forEach((slot) => {
+        const top = slot.offsetTop;
+        const height = slot.offsetHeight || 1;
+        const mid = top + height / 2;
+        const distance = Math.abs(mid - centerY);
+        if (distance < bestDistance) {
+          bestDistance = distance;
+          bestPage = parseInt(slot.dataset.page, 10);
+        }
+      });
+
+      setCurrentPageFromScroll(bestPage);
+    });
+  }
+
+  function syncPageView(options = {}) {
+    const smooth = options.smooth !== false;
+    scrollToPageSlot(state.currentPage, smooth);
+    hydratePageSlot(document.getElementById(`page-slot-${state.currentPage}`));
+    updatePageDisplays();
+    updateThumbnailHighlight();
+    updateBookmarkHighlight();
+    updateUrlHash();
+    prefetchAdjacent();
   }
 
   function prefetchImage(url) {
@@ -326,82 +561,31 @@
     prefetchPages([state.currentPage - 1, state.currentPage + 1]);
   }
 
-  function renderCurrentPage() {
-    const entry = getManifestEntry(state.currentPage);
-    const img = els.pageImage;
-    const token = ++state.loadToken;
-
-    img.alt = `Page ${state.currentPage} of ${state.pageCount}`;
-    state.isLoading = true;
-    showPageState('loading');
-
-    if (!entry || !entry.image) {
-      state.isLoading = false;
-      showMissingPage();
-      updatePageDisplays();
-      updateThumbnailHighlight();
-      updateBookmarkHighlight();
-      updateUrlHash();
-      prefetchAdjacent();
-      return;
-    }
-
-    const imageUrl = resolveAssetUrl(entry.image);
-    const cached = state.imageCache.has(imageUrl);
-
-    const onLoad = () => {
-      if (token !== state.loadToken) return;
-      state.naturalWidth = entry.width || img.naturalWidth;
-      state.naturalHeight = entry.height || img.naturalHeight;
-      state.isLoading = false;
-      state.imageCache.set(imageUrl, true);
-      showPageState('image');
-      applyZoomToImage();
-      updatePageDisplays();
-      updateThumbnailHighlight();
-      updateBookmarkHighlight();
-      updateUrlHash();
-      prefetchAdjacent();
-    };
-
-    const onError = () => {
-      if (token !== state.loadToken) return;
-      state.isLoading = false;
-      showMissingPage();
-      updatePageDisplays();
-      updateThumbnailHighlight();
-      updateBookmarkHighlight();
-      updateUrlHash();
-      prefetchAdjacent();
-    };
-
-    img.onload = onLoad;
-    img.onerror = onError;
-    img.src = imageUrl;
-
-    if (cached && img.complete) {
-      onLoad();
-    }
-  }
-
-  function goToPage(page, bookmarkId) {
+  function goToPage(page, bookmarkId, options = {}) {
     const target = clampPage(page);
-    state.currentPage = target;
+    const distance = Math.abs(target - state.currentPage);
+    const smooth =
+      options.smooth !== false && !options.instant && distance > 0 && distance <= 3;
 
     if (bookmarkId) {
       setActiveBookmark(bookmarkId);
       prefetchPages(getSiblingPages(bookmarkId));
-    } else {
+    } else if (target !== state.currentPage) {
       const bm = findBookmarkForPage(target);
       if (bm) {
         setActiveBookmark(bm.id);
       }
     }
 
+    state.currentPage = target;
+
     updateExpandedSectionsUI();
     updateBookmarkHighlight();
     scrollActiveBookmarkIntoView();
-    renderCurrentPage();
+
+    if (!state.pageStreamBuilt) return;
+
+    syncPageView({ smooth });
   }
 
   function buildBookmarkRow(item, isChild) {
@@ -458,12 +642,79 @@
     return html;
   }
 
+  function filterBookmarkTrees(query) {
+    const q = query.trim().toLowerCase();
+    state.bookmarkSearchQuery = q;
+
+    [els.bookmarkTreeDesktop, els.bookmarkTreeMobile].forEach((tree) => {
+      if (!tree) return;
+
+      tree.querySelectorAll('.bookmark-section').forEach((sec) => {
+        const sectionId = sec.dataset.sectionId;
+        const sectionTitle =
+          sec.querySelector('.bookmark-parent .bookmark-title')?.textContent.toLowerCase() || '';
+        const sectionMatches = !q || sectionTitle.includes(q);
+        let childMatches = false;
+
+        sec.querySelectorAll('.bookmark-children .bookmark-row').forEach((row) => {
+          const childTitle = row.querySelector('.bookmark-title')?.textContent.toLowerCase() || '';
+          const match = !q || sectionMatches || childTitle.includes(q);
+          row.classList.toggle('bookmark-filter-hidden', !match);
+          if (childTitle.includes(q)) childMatches = true;
+        });
+
+        const sectionVisible = !q || sectionMatches || childMatches;
+        sec.classList.toggle('bookmark-filter-hidden', !sectionVisible);
+
+        if (q && childMatches && !sectionMatches) {
+          state.expandedSections.add(sectionId);
+        }
+      });
+    });
+
+    if (q) updateExpandedSectionsUI();
+  }
+
+  function focusBookmarkSearch() {
+    if (isMobile()) {
+      const offcanvas = bootstrap.Offcanvas.getOrCreateInstance(els.bookmarkOffcanvas);
+      offcanvas.show();
+      setTimeout(() => els.bookmarkSearchMobile?.focus(), 300);
+    } else {
+      if (!state.bookmarkPanelOpen) {
+        state.bookmarkPanelOpen = true;
+        els.bookmarkPanel.classList.remove('collapsed');
+        syncBookmarkToggleState(true);
+      }
+      els.bookmarkSearch?.focus();
+    }
+  }
+
+  function bindBookmarkSearch(input) {
+    if (!input) return;
+    input.addEventListener('input', () => {
+      filterBookmarkTrees(input.value);
+      const other = input === els.bookmarkSearch ? els.bookmarkSearchMobile : els.bookmarkSearch;
+      if (other && other.value !== input.value) other.value = input.value;
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        input.value = '';
+        filterBookmarkTrees('');
+        input.blur();
+      }
+    });
+  }
+
   function renderBookmarkTrees() {
     const html = state.outline.map(renderBookmarkSection).join('');
     els.bookmarkTreeDesktop.innerHTML = html;
     els.bookmarkTreeMobile.innerHTML = html;
     bindBookmarkEvents(els.bookmarkTreeDesktop);
     bindBookmarkEvents(els.bookmarkTreeMobile);
+    if (state.bookmarkSearchQuery) {
+      filterBookmarkTrees(state.bookmarkSearchQuery);
+    }
   }
 
   function updateExpandedSectionsUI() {
@@ -632,23 +883,62 @@
       state.zoomLevel = 100;
     }
     updateZoomDisplays();
-    if (!state.isLoading && !els.pageImageWrap.classList.contains('d-none')) {
-      applyZoomToImage();
-    }
+    applyZoomToStream();
   }
 
   function setZoom(level) {
     state.zoomLevel = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, level));
     state.fitMode = 'custom';
     updateZoomDisplays();
-    if (!state.isLoading && !els.pageImageWrap.classList.contains('d-none')) {
-      applyZoomToImage();
-    }
+    applyZoomToStream();
   }
 
   function syncBookmarkToggleState(isOpen) {
     els.btnToggleBookmarks.classList.toggle('active', isOpen);
     els.btnToggleBookmarks.setAttribute('aria-pressed', String(isOpen));
+  }
+
+  function applyTheme(theme) {
+    const next = theme === 'dark' ? 'dark' : 'light';
+    state.theme = next;
+    document.documentElement.setAttribute('data-theme', next);
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, next);
+    } catch (_) {
+      /* ignore storage errors */
+    }
+    updateThemeUI();
+  }
+
+  function loadStoredTheme() {
+    try {
+      const stored = localStorage.getItem(THEME_STORAGE_KEY);
+      if (stored === 'dark' || stored === 'light') return stored;
+    } catch (_) {
+      /* ignore */
+    }
+    return 'light';
+  }
+
+  function updateThemeUI() {
+    const isDark = state.theme === 'dark';
+    if (els.btnThemeToggle) {
+      els.btnThemeToggle.querySelector('.theme-icon-light')?.classList.toggle('d-none', isDark);
+      els.btnThemeToggle.querySelector('.theme-icon-dark')?.classList.toggle('d-none', !isDark);
+      els.btnThemeToggle.setAttribute(
+        'title',
+        isDark ? 'Switch to light theme' : 'Switch to dark theme'
+      );
+    }
+    document.querySelectorAll('[data-theme-choice]').forEach((btn) => {
+      const active = btn.dataset.themeChoice === state.theme;
+      btn.classList.toggle('active', active);
+      btn.setAttribute('aria-checked', String(active));
+    });
+  }
+
+  function toggleTheme() {
+    applyTheme(state.theme === 'dark' ? 'light' : 'dark');
   }
 
   function toggleThumbnails() {
@@ -677,10 +967,23 @@
     els.btnFloatNext.addEventListener('click', () => goToPage(state.currentPage + 1));
 
     const handlePageInput = (input) => {
+      input.addEventListener('input', () => validatePageInput(input));
+      input.addEventListener('blur', () => {
+        if (!validatePageInput(input)) {
+          input.value = state.currentPage;
+          input.setAttribute('aria-invalid', 'false');
+        }
+      });
       const handler = () => {
+        if (!validatePageInput(input)) {
+          input.value = state.currentPage;
+          input.setAttribute('aria-invalid', 'false');
+          return;
+        }
         const val = clampPage(input.value);
         input.value = val;
-        goToPage(val);
+        input.setAttribute('aria-invalid', 'false');
+        goToPage(val, null, { instant: true });
       };
       input.addEventListener('change', handler);
       input.addEventListener('keydown', (e) => {
@@ -707,6 +1010,20 @@
 
     els.btnToggleThumbnails.addEventListener('click', toggleThumbnails);
     els.btnToggleBookmarks.addEventListener('click', toggleBookmarkPanel);
+    if (els.btnSearch) {
+      els.btnSearch.addEventListener('click', focusBookmarkSearch);
+    }
+    if (els.btnThemeToggle) {
+      els.btnThemeToggle.addEventListener('click', toggleTheme);
+    }
+    document.querySelectorAll('[data-theme-choice]').forEach((btn) => {
+      btn.addEventListener('click', () => applyTheme(btn.dataset.themeChoice));
+    });
+    if (els.menuToggleThumbnails) {
+      els.menuToggleThumbnails.addEventListener('click', toggleThumbnails);
+    }
+    bindBookmarkSearch(els.bookmarkSearch);
+    bindBookmarkSearch(els.bookmarkSearchMobile);
     els.btnCloseBookmarks.addEventListener('click', () => {
       state.bookmarkPanelOpen = false;
       els.bookmarkPanel.classList.add('collapsed');
@@ -720,22 +1037,21 @@
       if (isMobile()) syncBookmarkToggleState(false);
     });
 
-    // Weak deterrent only — not real content protection.
-    els.pageImage.addEventListener('contextmenu', (e) => e.preventDefault());
-
     window.addEventListener('hashchange', () => {
       const page = parseUrlHash();
       if (page && page !== state.currentPage) {
-        goToPage(page);
+        goToPage(page, null, { instant: true });
       }
     });
 
     window.addEventListener('resize', () => {
       updateViewportChrome();
-      if (!state.isLoading && !els.pageImageWrap.classList.contains('d-none')) {
-        applyZoomToImage();
-      }
+      applyZoomToStream();
     });
+
+    if (els.readingPane) {
+      els.readingPane.addEventListener('scroll', handleReadingPaneScroll, { passive: true });
+    }
   }
 
   function cacheElements() {
@@ -767,43 +1083,64 @@
     els.bookmarkTreeDesktop = $('bookmarkTreeDesktop');
     els.bookmarkTreeMobile = $('bookmarkTreeMobile');
     els.bookmarkOffcanvas = $('bookmarkOffcanvas');
-    els.pageStage = $('pageStage');
-    els.pageLoading = $('pageLoading');
-    els.pageMissing = $('pageMissing');
-    els.pageImageWrap = $('pageImageWrap');
-    els.pageImage = $('pageImage');
+    els.readingPane = $('readingPane');
+    els.pageStream = $('pageStream');
+    els.pageStreamLoading = $('pageStreamLoading');
+    els.btnSearch = $('btnSearch');
+    els.btnThemeToggle = $('btnThemeToggle');
+    els.menuToggleThumbnails = $('menuToggleThumbnails');
+    els.bookmarkSearch = $('bookmarkSearch');
+    els.bookmarkSearchMobile = $('bookmarkSearchMobile');
   }
 
   async function loadData() {
-    const [outlineRes, manifestRes] = await Promise.all([
-      fetch('data/outline.json'),
-      fetch('data/page-manifest.json'),
-    ]);
+    let outlineLoaded = false;
 
-    if (!outlineRes.ok) throw new Error('Failed to load outline.json');
-    if (!manifestRes.ok) throw new Error('Failed to load page-manifest.json');
+    try {
+      const outlineRes = await fetch('data/outline.json');
+      if (!outlineRes.ok) throw new Error('Failed to load outline.json');
+      const outlineData = await outlineRes.json();
+      state.outlineDoc = outlineData;
+      state.outline = outlineData.outline || [];
+      outlineLoaded = true;
+    } catch (err) {
+      console.error(err);
+      throw err;
+    }
 
-    const outlineData = await outlineRes.json();
-    const manifestData = await manifestRes.json();
+    try {
+      const manifestRes = await fetch('data/page-manifest.json');
+      if (manifestRes.ok) {
+        state.manifest = await manifestRes.json();
+      } else {
+        console.warn('page-manifest.json not found; viewer will show missing-page placeholders.');
+        state.manifest = { document: { pageCount: state.outlineDoc?.document?.pageCount || 0 }, pages: {} };
+      }
+    } catch (err) {
+      console.warn('Failed to load page-manifest.json', err);
+      state.manifest = { document: { pageCount: state.outlineDoc?.document?.pageCount || 0 }, pages: {} };
+    }
 
-    state.outlineDoc = outlineData;
-    state.outline = outlineData.outline || [];
-    state.manifest = manifestData;
     state.pageCount = derivePageCount();
+    return outlineLoaded;
   }
 
   async function init() {
     cacheElements();
+    applyTheme(loadStoredTheme());
     bindEvents();
     updateViewportChrome();
+    setStreamLoading(true);
 
     try {
       await loadData();
     } catch (err) {
       console.error(err);
-      els.pageMissing.querySelector('p').textContent =
-        'Failed to load document data. Check that data/outline.json and data/page-manifest.json exist.';
-      showPageState('missing');
+      setStreamLoading(false);
+      if (els.pageStream) {
+        els.pageStream.innerHTML =
+          '<p class="page-stream-error">Failed to load document data. Check that data/outline.json exists.</p>';
+      }
       return;
     }
 
@@ -811,11 +1148,26 @@
     renderBookmarkTrees();
     updateZoomDisplays();
 
+    buildPageStream();
+
     const hashPage = parseUrlHash();
     const startPage = hashPage || 1;
-    goToPage(startPage);
+    state.currentPage = startPage;
 
+    const bm = findBookmarkForPage(startPage);
+    if (bm) {
+      setActiveBookmark(bm.id);
+      updateExpandedSectionsUI();
+      updateBookmarkHighlight();
+    }
+
+    updatePageDisplays();
+    scrollToPageSlot(startPage, false);
+    hydratePageSlot(document.getElementById(`page-slot-${startPage}`));
+    updateThumbnailHighlight();
+    updateUrlHash();
     prefetchSectionStarts();
+    prefetchAdjacent();
   }
 
   if (document.readyState === 'loading') {
