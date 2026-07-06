@@ -1,0 +1,8 @@
+# Ensure JSON files are served correctly on Apache hosts
+<IfModule mod_mime.c>
+  AddType application/json .json
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header set Access-Control-Allow-Origin "*"
+</IfModule>

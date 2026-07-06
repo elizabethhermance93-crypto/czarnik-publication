@@ -395,6 +395,52 @@ body {
   width: 100%;
 }
 
+.page-frame {
+  position: relative;
+  display: inline-block;
+  max-width: 100%;
+}
+
+.link-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+}
+
+.link-hotspot {
+  position: absolute;
+  pointer-events: auto;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  text-decoration: none;
+  display: block;
+
+  &.link-debug {
+    background: rgba(37, 99, 235, 0.25);
+    outline: 1px solid rgba(37, 99, 235, 0.6);
+  }
+}
+
+.link-proofing-banner {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2000;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #fff;
+  background: rgba(13, 27, 42, 0.88);
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}
+
 .page-slot .page-image {
   display: block;
   max-width: 100%;
@@ -427,6 +473,28 @@ body {
   padding: 48px 24px;
   text-align: center;
   color: var(--viewer-muted);
+  max-width: 520px;
+  margin: 0 auto;
+
+  p {
+    margin: 0 0 10px;
+    line-height: 1.5;
+  }
+
+  .page-stream-error-detail {
+    font-size: 13px;
+    color: var(--viewer-text);
+    word-break: break-word;
+  }
+
+  .page-stream-error-hint {
+    font-size: 12px;
+    margin-top: 14px;
+  }
+
+  code {
+    font-size: 12px;
+  }
 }
 
 .page-slot-missing {
@@ -702,12 +770,40 @@ body {
 
 .bookmark-row-child {
   border-left: 2px solid transparent;
-  padding-left: 10px;
-  margin-left: 4px;
 
   &.active {
     border-left-color: $accent;
   }
+}
+
+.toc-parent {
+  font-weight: 600;
+  background: var(--viewer-surface-muted);
+  border-top: 1px solid var(--viewer-border);
+
+  .toc-section-title {
+    font-size: 13.5px;
+    letter-spacing: 0.02em;
+  }
+}
+
+.toc-child {
+  font-size: 12.5px;
+  color: var(--viewer-muted);
+  padding-left: 2rem !important;
+  margin-left: 0;
+}
+
+.toc-member-title {
+  font-size: 12.5px;
+}
+
+.toc-page-number {
+  flex: 0 0 auto;
+  min-width: 2.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--viewer-muted);
 }
 
 .bookmark-title {
@@ -725,7 +821,7 @@ body {
 }
 
 .bookmark-children {
-  padding-left: 20px;
+  padding-left: 0;
   padding-bottom: 4px;
 
   .bookmark-row {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Extract PDF bookmarks into data/outline.json."""
+"""Extract PDF bookmarks into viewer-data/outline.json."""
 
 from __future__ import annotations
 
@@ -17,12 +17,13 @@ from constants import (
     EXPECTED_PARENT_COUNT,
     EXPECTED_PARENT_PAGES,
     EXPECTED_TOTAL_COUNT,
+    PUBLIC_DATA_DIR,
     SOURCE_FILENAME,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PDF_PATH = PROJECT_ROOT / "source" / SOURCE_FILENAME
-OUTLINE_PATH = PROJECT_ROOT / "data" / "outline.json"
+OUTLINE_PATH = PROJECT_ROOT / PUBLIC_DATA_DIR / "outline.json"
 
 CITATION_YEAR_RE = re.compile(r"\b(19|20)\d{2}\b")
 CITATION_SPLIT_RE = re.compile(r"\s*[,;]\s*(?=(?:J\.|Vol\.|pp\.|p\.|doi:|\d{4}))", re.IGNORECASE)

@@ -5,14 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="AWC Publications — Online publication viewer">
   <title>AWC Publications — Online Viewer</title>
+  <link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="assets/css/styles.css" rel="stylesheet">
+  <link href="assets/css/styles.css?v=4" rel="stylesheet">
 </head>
 <body>
+  <div id="linkProofingBanner" class="link-proofing-banner d-none" role="status">Link proofing mode</div>
   <div id="app" class="viewer-app">
     <!-- Top Toolbar -->
     <header class="viewer-toolbar" role="banner">
@@ -35,6 +37,16 @@
           <input type="number" class="form-control page-input" id="pageInput" aria-label="Current page" min="1" value="1">
           <span class="page-total" id="pageTotal">/ —</span>
         </div>
+        <div class="toolbar-divider" aria-hidden="true"></div>
+        <button type="button" class="btn-toolbar" id="btnFirstPage" aria-label="First page" title="First Page">
+          <i class="bi bi-house" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="btn-toolbar" id="btnSectionTop" aria-label="Section top" title="Section Top">
+          <i class="bi bi-bookmark" aria-hidden="true"></i>
+        </button>
+        <button type="button" class="btn-toolbar" id="btnNextSection" aria-label="Next section" title="Next Section">
+          <i class="bi bi-skip-end" aria-hidden="true"></i>
+        </button>
         <div class="toolbar-divider" aria-hidden="true"></div>
         <button type="button" class="btn-toolbar" id="btnZoomOut" aria-label="Zoom out" title="Zoom out">
           <i class="bi bi-dash-lg" aria-hidden="true"></i>
@@ -99,6 +111,12 @@
 
     <!-- Mobile secondary toolbar -->
     <div class="mobile-toolbar d-md-none" role="toolbar" aria-label="Page navigation">
+      <button type="button" class="btn-toolbar" id="btnFirstPageMobile" aria-label="First page" title="First Page">
+        <i class="bi bi-house" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="btn-toolbar" id="btnSectionTopMobile" aria-label="Section top" title="Section Top">
+        <i class="bi bi-bookmark" aria-hidden="true"></i>
+      </button>
       <button type="button" class="btn-toolbar" id="btnPrevPageMobile" aria-label="Previous page">
         <i class="bi bi-chevron-left" aria-hidden="true"></i>
       </button>
@@ -109,6 +127,9 @@
       </div>
       <button type="button" class="btn-toolbar" id="btnNextPageMobile" aria-label="Next page">
         <i class="bi bi-chevron-right" aria-hidden="true"></i>
+      </button>
+      <button type="button" class="btn-toolbar" id="btnNextSectionMobile" aria-label="Next section" title="Next Section">
+        <i class="bi bi-skip-end" aria-hidden="true"></i>
       </button>
     </div>
 
@@ -190,6 +211,6 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
-  <script src="assets/js/app.js"></script>
+  <script src="assets/js/app.js?v=4"></script>
 </body>
 </html>

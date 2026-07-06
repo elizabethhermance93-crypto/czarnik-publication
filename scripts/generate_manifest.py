@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate data/page-manifest.json from rendered page images."""
+"""Generate viewer-data/page-manifest.json from rendered page images."""
 
 from __future__ import annotations
 
@@ -12,13 +12,13 @@ from pathlib import Path
 import fitz
 from PIL import Image
 
-from constants import DOCUMENT_TITLE, SOURCE_FILENAME
+from constants import DOCUMENT_TITLE, PUBLIC_DATA_DIR, SOURCE_FILENAME
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PDF_PATH = PROJECT_ROOT / "source" / SOURCE_FILENAME
 PAGES_DIR = PROJECT_ROOT / "pages"
 THUMBS_DIR = PROJECT_ROOT / "thumbs"
-MANIFEST_PATH = PROJECT_ROOT / "data" / "page-manifest.json"
+MANIFEST_PATH = PROJECT_ROOT / PUBLIC_DATA_DIR / "page-manifest.json"
 
 PAGE_FILE_RE = re.compile(r"^page-(\d{4})\.(webp|png|jpe?g)$", re.IGNORECASE)
 

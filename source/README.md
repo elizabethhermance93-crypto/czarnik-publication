@@ -12,4 +12,4 @@ AWC_Publications_v17_bookmarked_citation_outline.pdf
 - Do **not** copy this PDF into the public web root when deploying.
 - Do **not** link to this file from `index.html` or any public-facing asset.
 
-The public viewer uses pre-rendered page images in `pages/` and `thumbs/`, plus JSON data in `data/`.
+The public viewer uses pre-rendered page images in `pages/` and `thumbs/`, plus JSON in `viewer-data/`.

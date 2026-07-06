@@ -17,14 +17,19 @@ from constants import (
     EXPECTED_PARENT_PAGES,
     EXPECTED_TOTAL_COUNT,
     IMAGE_EXTENSIONS,
+    LINKS_FILENAME,
+    PUBLIC_DATA_DIR,
     QA_PAGES,
     SOURCE_FILENAME,
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PDF_PATH = PROJECT_ROOT / "source" / SOURCE_FILENAME
-OUTLINE_PATH = PROJECT_ROOT / "data" / "outline.json"
-MANIFEST_PATH = PROJECT_ROOT / "data" / "page-manifest.json"
+OUTLINE_PATH = PROJECT_ROOT / PUBLIC_DATA_DIR / "outline.json"
+MANIFEST_PATH = PROJECT_ROOT / PUBLIC_DATA_DIR / "page-manifest.json"
+LINKS_PATH = PROJECT_ROOT / PUBLIC_DATA_DIR / LINKS_FILENAME
+FAVICON_PATH = PROJECT_ROOT / "assets" / "img" / "favicon.svg"
+INDEX_PATH = PROJECT_ROOT / "index.html"
 PAGES_DIR = PROJECT_ROOT / "pages"
 THUMBS_DIR = PROJECT_ROOT / "thumbs"
 ROBOTS_PATH = PROJECT_ROOT / "robots.txt"
@@ -250,6 +255,55 @@ def main() -> int:
         record("PASS", "robots.txt exists", str(ROBOTS_PATH))
     else:
         record("FAIL", "robots.txt exists", f"Missing: {ROBOTS_PATH}")
+
+    # Phase 4 — links, favicon, navigation, TOC styling
+    links_data = load_json(LINKS_PATH)
+    if links_data:
+        summary = links_data.get("summary", {})
+        total = summary.get("totalLinks", 0)
+        uri_count = summary.get("uriLinks", 0)
+        pages_with = summary.get("pagesWithLinks", 0)
+        record(
+            "PASS" if total > 0 else "WARN",
+            "links.json exists",
+            f"{LINKS_PATH} ({total} links)",
+        )
+        record(
+            "PASS" if total > 0 else "WARN",
+            "Link summary counts",
+            f"total={total}, uri={uri_count}, pagesWithLinks={pages_with}",
+        )
+    else:
+        record("WARN", "links.json exists", f"Missing: {LINKS_PATH} (run scripts/extract_links.py)")
+        record("WARN", "Link summary counts", "links.json not found")
+
+    if FAVICON_PATH.exists():
+        record("PASS", "favicon.svg exists", str(FAVICON_PATH))
+    else:
+        record("FAIL", "favicon.svg exists", f"Missing: {FAVICON_PATH}")
+
+    if INDEX_PATH.exists():
+        index_html = INDEX_PATH.read_text(encoding="utf-8")
+        nav_ids = ["btnFirstPage", "btnSectionTop", "btnNextSection"]
+        missing_nav = [btn_id for btn_id in nav_ids if btn_id not in index_html]
+        if missing_nav:
+            record("FAIL", "Section navigation buttons in index.html", f"Missing: {missing_nav}")
+        else:
+            record("PASS", "Section navigation buttons in index.html", ", ".join(nav_ids))
+    else:
+        record("FAIL", "Section navigation buttons in index.html", f"Missing: {INDEX_PATH}")
+
+    styles_path = PROJECT_ROOT / "assets" / "css" / "styles.css"
+    if styles_path.exists():
+        styles_text = styles_path.read_text(encoding="utf-8")
+        toc_ok = ".toc-parent" in styles_text and ".toc-child" in styles_text
+        record(
+            "PASS" if toc_ok else "FAIL",
+            "TOC hierarchy styles in styles.css",
+            "Found .toc-parent and .toc-child" if toc_ok else "Missing TOC classes",
+        )
+    else:
+        record("FAIL", "TOC hierarchy styles in styles.css", f"Missing: {styles_path}")
 
     # Print report
     print()

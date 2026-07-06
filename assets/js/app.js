@@ -14,6 +14,10 @@
   const DEFAULT_PAGE_ASPECT = 1445 / 1870;
 
   const THEME_STORAGE_KEY = 'viewer-theme';
+  const LINK_DEBUG = new URLSearchParams(window.location.search).has('debugLinks');
+  const DATA_DIRS = (window.VIEWER_DATA_DIRS || ['viewer-data', 'data']).map((d) =>
+    String(d).replace(/\/$/, '')
+  );
 
   const state = {
     currentPage: 1,
@@ -28,6 +32,7 @@
     outline: [],
     outlineDoc: null,
     manifest: null,
+    links: null,
     imageCache: new Map(),
     prefetchQueue: new Set(),
     isLoading: false,
@@ -43,6 +48,7 @@
   let pageLoadObserver = null;
   let pageTrackObserver = null;
   let scrollRafId = 0;
+  let linkOverlayRafId = 0;
 
   const els = {};
 
@@ -54,14 +60,32 @@
     return window.innerWidth < MOBILE_BREAKPOINT;
   }
 
-  function resolveAssetUrl(path) {
+  function getAppBasePath() {
+    const segments = window.location.pathname.split('/');
+    const last = segments[segments.length - 1];
+    if (last && last.includes('.')) {
+      segments.pop();
+    }
+    let base = segments.join('/');
+    if (base && !base.endsWith('/')) {
+      base += '/';
+    }
+    return base || '/';
+  }
+
+  function resolvePublicUrl(path) {
     if (!path) return path;
     if (/^(https?:|data:)/.test(path)) return path;
-    if (path.startsWith('/')) {
-      const base = window.location.pathname.replace(/\/[^/]*$/, '/');
-      return base + path.slice(1);
+    const clean = path.replace(/^\//, '');
+    const base = getAppBasePath();
+    if (base === '/') {
+      return `/${clean}`;
     }
-    return path;
+    return `${base}${clean}`;
+  }
+
+  function resolveAssetUrl(path) {
+    return resolvePublicUrl(path);
   }
 
   function scheduleIdle(fn) {
@@ -117,6 +141,37 @@
     }
 
     return maxPage;
+  }
+
+  function getParentSections() {
+    return state.outline.map(({ id, title, page }) => ({ id, title, page }));
+  }
+
+  function getCurrentSection(currentPage) {
+    let current = null;
+    for (const sec of state.outline) {
+      if (sec.page <= currentPage) current = sec;
+      else break;
+    }
+    return current;
+  }
+
+  function getNextSection(currentPage) {
+    return state.outline.find((sec) => sec.page > currentPage) || null;
+  }
+
+  function goToFirstPage() {
+    goToPage(1, null, { instant: true });
+  }
+
+  function goToCurrentSectionTop() {
+    const sec = getCurrentSection(state.currentPage);
+    if (sec) goToPage(sec.page, sec.id, { instant: true });
+  }
+
+  function goToNextSection() {
+    const next = getNextSection(state.currentPage);
+    if (next) goToPage(next.page, next.id, { instant: true });
   }
 
   function findBookmarkForPage(page) {
@@ -226,6 +281,20 @@
     [els.btnNextPage, els.btnNextPageMobile, els.btnFloatNext].forEach((btn) => {
       if (btn) btn.disabled = atEnd;
     });
+
+    const hasSection = Boolean(getCurrentSection(state.currentPage));
+    const hasNextSection = Boolean(getNextSection(state.currentPage));
+    const atFirst = state.currentPage <= 1;
+
+    [els.btnFirstPage, els.btnFirstPageMobile].forEach((btn) => {
+      if (btn) btn.disabled = atFirst;
+    });
+    [els.btnSectionTop, els.btnSectionTopMobile].forEach((btn) => {
+      if (btn) btn.disabled = !hasSection;
+    });
+    [els.btnNextSection, els.btnNextSectionMobile].forEach((btn) => {
+      if (btn) btn.disabled = !hasNextSection;
+    });
   }
 
   function updateZoomDisplays() {
@@ -309,6 +378,97 @@
         img.style.height = '';
       });
     }
+    scheduleLinkOverlayUpdate();
+  }
+
+  function getPageLinks(pageNum) {
+    if (!state.links?.pages) return [];
+    return state.links.pages[pageKey(pageNum)] || [];
+  }
+
+  function scheduleLinkOverlayUpdate() {
+    if (linkOverlayRafId) cancelAnimationFrame(linkOverlayRafId);
+    linkOverlayRafId = requestAnimationFrame(() => {
+      linkOverlayRafId = 0;
+      updateAllLinkOverlays();
+    });
+  }
+
+  function updateLinkOverlayPositions(frame) {
+    if (!frame) return;
+    const img = frame.querySelector('.page-image');
+    const overlay = frame.querySelector('.link-overlay');
+    if (!img || !overlay || !img.offsetWidth || !img.offsetHeight) return;
+
+    const w = img.offsetWidth;
+    const h = img.offsetHeight;
+    overlay.style.width = `${w}px`;
+    overlay.style.height = `${h}px`;
+
+    overlay.querySelectorAll('.link-hotspot').forEach((hotspot) => {
+      const x = parseFloat(hotspot.dataset.x || '0');
+      const y = parseFloat(hotspot.dataset.y || '0');
+      const rw = parseFloat(hotspot.dataset.w || '0');
+      const rh = parseFloat(hotspot.dataset.h || '0');
+      hotspot.style.left = `${x * w}px`;
+      hotspot.style.top = `${y * h}px`;
+      hotspot.style.width = `${rw * w}px`;
+      hotspot.style.height = `${rh * h}px`;
+    });
+  }
+
+  function updateAllLinkOverlays() {
+    if (!els.pageStream) return;
+    els.pageStream.querySelectorAll('.page-frame').forEach((frame) => {
+      updateLinkOverlayPositions(frame);
+    });
+  }
+
+  function renderLinkOverlays(frame, pageNum) {
+    const overlay = frame.querySelector('.link-overlay');
+    if (!overlay) return;
+
+    const links = getPageLinks(pageNum);
+    overlay.innerHTML = '';
+
+    if (!links.length) {
+      overlay.setAttribute('aria-hidden', 'true');
+      return;
+    }
+
+    overlay.setAttribute('aria-hidden', 'false');
+
+    for (const link of links) {
+      const rect = link.rect || {};
+      const hotspot = document.createElement('a');
+      hotspot.className = 'link-hotspot';
+      if (LINK_DEBUG) hotspot.classList.add('link-debug');
+
+      hotspot.dataset.x = String(rect.x ?? 0);
+      hotspot.dataset.y = String(rect.y ?? 0);
+      hotspot.dataset.w = String(rect.w ?? 0);
+      hotspot.dataset.h = String(rect.h ?? 0);
+
+      if (link.type === 'uri' && link.uri) {
+        hotspot.href = link.uri;
+        hotspot.target = '_blank';
+        hotspot.rel = 'noopener noreferrer';
+        hotspot.title = 'Open link';
+      } else if (link.type === 'internal' && link.targetPage) {
+        hotspot.href = `#page=${link.targetPage}`;
+        hotspot.title = `Go to page ${link.targetPage}`;
+        hotspot.addEventListener('click', (e) => {
+          e.preventDefault();
+          goToPage(link.targetPage, null, { instant: true });
+        });
+      } else {
+        continue;
+      }
+
+      overlay.appendChild(hotspot);
+    }
+
+    updateLinkOverlayPositions(frame);
   }
 
   function setStreamLoading(loading) {
@@ -349,14 +509,23 @@
       return;
     }
 
+    const frame = document.createElement('div');
+    frame.className = 'page-frame';
+
     const img = document.createElement('img');
     img.className = 'page-image';
     img.alt = `Page ${pageNum} of ${state.pageCount}`;
     img.draggable = false;
     img.decoding = 'async';
     img.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    const overlay = document.createElement('div');
+    overlay.className = 'link-overlay';
+    overlay.setAttribute('aria-hidden', 'true');
+
     img.addEventListener('load', () => {
       applyZoomToStream();
+      renderLinkOverlays(frame, pageNum);
     });
     img.addEventListener('error', () => {
       inner.innerHTML = '';
@@ -370,7 +539,14 @@
     } else {
       img.loading = 'lazy';
     }
-    inner.appendChild(img);
+
+    frame.appendChild(img);
+    frame.appendChild(overlay);
+    inner.appendChild(frame);
+
+    if (img.complete && img.naturalWidth) {
+      renderLinkOverlays(frame, pageNum);
+    }
   }
 
   function buildPageStream() {
@@ -592,9 +768,15 @@
     const isActive = state.activeBookmarkId === item.id;
     const isParentActive = state.activeParentId === item.id && !isChild;
     const classes = ['bookmark-row'];
-    if (isChild) classes.push('bookmark-row-child');
+    if (isChild) {
+      classes.push('bookmark-row-child', 'toc-child');
+    } else {
+      classes.push('toc-parent');
+    }
     if (isActive) classes.push('active');
     if (isParentActive) classes.push('parent-active');
+
+    const titleClass = isChild ? 'bookmark-title toc-member-title' : 'bookmark-title toc-section-title';
 
     return `
       <button type="button" class="${classes.join(' ')}"
@@ -602,8 +784,8 @@
         data-page="${item.page}"
         role="treeitem"
         aria-selected="${isActive}">
-        <span class="bookmark-title">${escapeHtml(item.title)}</span>
-        <span class="bookmark-page">${item.page}</span>
+        <span class="${titleClass}">${escapeHtml(item.title)}</span>
+        <span class="bookmark-page toc-page-number">${item.page}</span>
       </button>
     `;
   }
@@ -966,6 +1148,16 @@
     els.btnFloatPrev.addEventListener('click', () => goToPage(state.currentPage - 1));
     els.btnFloatNext.addEventListener('click', () => goToPage(state.currentPage + 1));
 
+    [els.btnFirstPage, els.btnFirstPageMobile].forEach((btn) => {
+      if (btn) btn.addEventListener('click', goToFirstPage);
+    });
+    [els.btnSectionTop, els.btnSectionTopMobile].forEach((btn) => {
+      if (btn) btn.addEventListener('click', goToCurrentSectionTop);
+    });
+    [els.btnNextSection, els.btnNextSectionMobile].forEach((btn) => {
+      if (btn) btn.addEventListener('click', goToNextSection);
+    });
+
     const handlePageInput = (input) => {
       input.addEventListener('input', () => validatePageInput(input));
       input.addEventListener('blur', () => {
@@ -1047,6 +1239,7 @@
     window.addEventListener('resize', () => {
       updateViewportChrome();
       applyZoomToStream();
+      scheduleLinkOverlayUpdate();
     });
 
     if (els.readingPane) {
@@ -1065,6 +1258,12 @@
     els.btnNextPageMobile = $('btnNextPageMobile');
     els.btnFloatPrev = $('btnFloatPrev');
     els.btnFloatNext = $('btnFloatNext');
+    els.btnFirstPage = $('btnFirstPage');
+    els.btnSectionTop = $('btnSectionTop');
+    els.btnNextSection = $('btnNextSection');
+    els.btnFirstPageMobile = $('btnFirstPageMobile');
+    els.btnSectionTopMobile = $('btnSectionTopMobile');
+    els.btnNextSectionMobile = $('btnNextSectionMobile');
     els.btnZoomIn = $('btnZoomIn');
     els.btnZoomOut = $('btnZoomOut');
     els.btnZoomInMobile = $('btnZoomInMobile');
@@ -1091,15 +1290,58 @@
     els.menuToggleThumbnails = $('menuToggleThumbnails');
     els.bookmarkSearch = $('bookmarkSearch');
     els.bookmarkSearchMobile = $('bookmarkSearchMobile');
+    els.linkProofingBanner = $('linkProofingBanner');
+  }
+
+  async function fetchJson(relativePath) {
+    const url = resolvePublicUrl(relativePath);
+    let response;
+    try {
+      response = await fetch(url, { cache: 'no-cache' });
+    } catch (err) {
+      const error = new Error(`Network error loading ${relativePath} from ${url}`);
+      error.cause = err;
+      error.url = url;
+      throw error;
+    }
+
+    if (!response.ok) {
+      const error = new Error(`HTTP ${response.status} loading ${relativePath} from ${url}`);
+      error.status = response.status;
+      error.url = url;
+      throw error;
+    }
+
+    try {
+      return await response.json();
+    } catch (err) {
+      const error = new Error(`Invalid JSON in ${relativePath} (${url})`);
+      error.cause = err;
+      error.url = url;
+      throw error;
+    }
+  }
+
+  async function fetchJsonFromDataDirs(filename) {
+    let lastError = null;
+    for (const dir of DATA_DIRS) {
+      try {
+        return await fetchJson(`${dir}/${filename}`);
+      } catch (err) {
+        lastError = err;
+        if (err.status !== 404) {
+          throw err;
+        }
+      }
+    }
+    throw lastError || new Error(`Could not load ${filename}`);
   }
 
   async function loadData() {
     let outlineLoaded = false;
 
     try {
-      const outlineRes = await fetch('data/outline.json');
-      if (!outlineRes.ok) throw new Error('Failed to load outline.json');
-      const outlineData = await outlineRes.json();
+      const outlineData = await fetchJsonFromDataDirs('outline.json');
       state.outlineDoc = outlineData;
       state.outline = outlineData.outline || [];
       outlineLoaded = true;
@@ -1109,16 +1351,20 @@
     }
 
     try {
-      const manifestRes = await fetch('data/page-manifest.json');
-      if (manifestRes.ok) {
-        state.manifest = await manifestRes.json();
-      } else {
-        console.warn('page-manifest.json not found; viewer will show missing-page placeholders.');
-        state.manifest = { document: { pageCount: state.outlineDoc?.document?.pageCount || 0 }, pages: {} };
-      }
+      state.manifest = await fetchJsonFromDataDirs('page-manifest.json');
     } catch (err) {
       console.warn('Failed to load page-manifest.json', err);
-      state.manifest = { document: { pageCount: state.outlineDoc?.document?.pageCount || 0 }, pages: {} };
+      state.manifest = {
+        document: { pageCount: state.outlineDoc?.document?.pageCount || 0 },
+        pages: {},
+      };
+    }
+
+    try {
+      state.links = await fetchJsonFromDataDirs('links.json');
+    } catch (err) {
+      console.warn('links.json not found — link overlays disabled', err);
+      state.links = null;
     }
 
     state.pageCount = derivePageCount();
@@ -1128,6 +1374,9 @@
   async function init() {
     cacheElements();
     applyTheme(loadStoredTheme());
+    if (LINK_DEBUG && els.linkProofingBanner) {
+      els.linkProofingBanner.classList.remove('d-none');
+    }
     bindEvents();
     updateViewportChrome();
     setStreamLoading(true);
@@ -1138,8 +1387,15 @@
       console.error(err);
       setStreamLoading(false);
       if (els.pageStream) {
-        els.pageStream.innerHTML =
-          '<p class="page-stream-error">Failed to load document data. Check that data/outline.json exists.</p>';
+        const detail = err.url
+          ? `${err.message}`
+          : 'Check that viewer-data/outline.json was uploaded and is reachable.';
+        els.pageStream.innerHTML = `
+          <div class="page-stream-error">
+            <p><strong>Failed to load document data.</strong></p>
+            <p class="page-stream-error-detail">${escapeHtml(detail)}</p>
+            <p class="page-stream-error-hint">Upload the <code>viewer-data/</code> folder (contains outline.json and page-manifest.json). Test: <code>/viewer-data/outline.json</code> must return HTTP 200 in your browser.</p>
+          </div>`;
       }
       return;
     }

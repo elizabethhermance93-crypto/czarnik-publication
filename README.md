@@ -29,9 +29,9 @@ czarnik-publications-viewer/
 │   ├── css/styles.css      # Used by the app
 │   ├── css/styles.scss     # Editable SCSS source (optional)
 │   └── js/app.js           # Viewer logic
-├── data/
-│   ├── outline.json        # Table of contents (bookmarks)
-│   └── page-manifest.json  # Page image index
+├── viewer-data/            # Table of contents + page manifest (JSON)
+│   ├── outline.json
+│   └── page-manifest.json
 ├── pages/                  # Full-size page images (WebP)
 ├── thumbs/                 # Thumbnail images (WebP)
 ├── source/                 # Source PDF (local build only — NOT public)
@@ -95,7 +95,7 @@ Page count is read from the actual PDF — do not hardcode.
 python scripts/extract_outline.py
 ```
 
-Writes `data/outline.json` from PDF bookmarks via PyMuPDF `get_toc()`.
+Writes `viewer-data/outline.json` from PDF bookmarks via PyMuPDF `get_toc()`.
 
 ### 5. Render page images
 
@@ -130,7 +130,7 @@ If WebP save fails, the script falls back to PNG and reports a warning.
 python scripts/generate_manifest.py
 ```
 
-Writes `data/page-manifest.json` with image paths and dimensions.
+Writes `viewer-data/page-manifest.json` with image paths and dimensions.
 
 ### 7. Run QA checks
 
@@ -179,9 +179,9 @@ Open [http://localhost:8000](http://localhost:8000)
 | Command | Output |
 |---------|--------|
 | `inspect_pdf.py` | QA report: file size, SHA-256, page count, metadata, bookmark counts, page sizes |
-| `extract_outline.py` | `data/outline.json` — hierarchical TOC with 191 entries (13 sections + 178 publications) |
+| `extract_outline.py` | `viewer-data/outline.json` — hierarchical TOC with 191 entries (13 sections + 178 publications) |
 | `render_pages.py --qa` | 14 QA page images in `pages/` and `thumbs/` (section starts + final page) |
-| `generate_manifest.py` | `data/page-manifest.json` — image paths and dimensions |
+| `generate_manifest.py` | `viewer-data/page-manifest.json` — image paths and dimensions |
 | `qa_check.py` | PASS / WARN / FAIL report for the full build |
 
 ### Render all pages (full build)
@@ -256,9 +256,19 @@ Recommended: static hosting + CDN for images.
 | Page images | Cloudflare R2, S3, or CDN-backed object storage |
 | Source PDF | Keep off the public web root entirely |
 
-Upload `index.html`, `assets/`, `data/`, `pages/`, `thumbs/`, and `robots.txt`. Do **not** upload `source/`.
+Upload `index.html`, `assets/`, `viewer-data/`, `pages/`, `thumbs/`, and `robots.txt`. Do **not** upload `source/`.
 
-`robots.txt` disallows crawlers from `/source/`, `/pages/`, `/thumbs/`, and `/data/`. This is not access control — it only guides well-behaved crawlers.
+After running link extraction (Phase 4), include `viewer-data/links.json` in the deploy bundle.
+
+**Important:** The JSON folder must be named `viewer-data/` on the server (not `data/` — some hosts block that path). Verify in your browser:
+
+```
+https://your-domain.com/viewer-data/outline.json
+```
+
+You should see raw JSON (HTTP 200). If you get 404, the folder was not uploaded to the web root.
+
+`robots.txt` disallows crawlers from `/source/`, `/pages/`, `/thumbs/`, and `/viewer-data/`. This is not access control — it only guides well-behaved crawlers.
 
 ---
 
@@ -267,6 +277,63 @@ Upload `index.html`, `assets/`, `data/`, `pages/`, `thumbs/`, and `robots.txt`. 
 - The source PDF must not be in the public web root.
 - Right-click on the page image is disabled in JS as a weak deterrent only.
 - Users can still save images or reconstruct content; the goal is to avoid easy full-PDF download.
+
+---
+
+## Phase 4 — Links, navigation, and TOC polish
+
+Phase 4 adds a favicon, section navigation shortcuts, clearer TOC hierarchy styling, and automated PDF link hotspots on page images.
+
+### Favicon
+
+`assets/img/favicon.svg` is linked from `index.html`. Upload `assets/img/` with the rest of the static assets.
+
+### Section navigation
+
+Toolbar buttons (desktop and mobile):
+
+- **First Page** — jump to page 1
+- **Section Top** — jump to the start of the current parent section
+- **Next Section** — jump to the next parent section
+
+### TOC hierarchy
+
+Parent sections use `.toc-parent` / `.toc-section-title`; child entries use `.toc-child` / `.toc-member-title` with a **2rem** left indent.
+
+### Link extraction
+
+Links are extracted automatically from PDF annotations (no manual URL mapping):
+
+```bash
+python scripts/extract_links.py
+```
+
+Outputs:
+
+- `viewer-data/links.json` — normalized hotspot rects per page
+- `reports/link-report.md` — counts, sample URIs, proofreading notes
+
+The viewer loads `links.json` gracefully; if it is missing, pages still render without hotspots.
+
+### Link overlays and proofreading
+
+External URI links open in a new tab. Internal links jump to the target page in the viewer. Hotspots reposition on zoom and window resize.
+
+Proofreading mode (translucent blue boxes):
+
+```bash
+python -m http.server 8000
+# http://localhost:8000?debugLinks=1
+```
+
+### Phase 4 QA
+
+```bash
+python scripts/extract_links.py
+python scripts/qa_check.py
+```
+
+Deploy must include `viewer-data/links.json` after extraction.
 
 ---
 

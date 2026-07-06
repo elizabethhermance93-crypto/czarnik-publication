@@ -2,6 +2,7 @@ User-agent: *
 Disallow: /source/
 Disallow: /pages/
 Disallow: /thumbs/
+Disallow: /viewer-data/
 Disallow: /data/
 
 # Note: robots.txt is not access control. It only guides crawlers.

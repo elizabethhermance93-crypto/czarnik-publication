@@ -14,3 +14,7 @@ EXPECTED_PARENT_PAGES = [1, 49, 116, 156, 165, 214, 304, 456, 507, 658, 666, 708
 QA_PAGES = [1, 49, 116, 156, 165, 214, 304, 456, 507, 658, 666, 708, 910]
 
 IMAGE_EXTENSIONS = ("webp", "png", "jpg", "jpeg")
+
+# Public web folder for JSON (avoid "data/" — blocked on some hosts)
+PUBLIC_DATA_DIR = "viewer-data"
+LINKS_FILENAME = "links.json"
