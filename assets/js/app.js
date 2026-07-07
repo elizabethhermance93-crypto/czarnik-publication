@@ -813,7 +813,7 @@
     html += `</div>`;
 
     if (hasChildren) {
-      html += `<div class="bookmark-children${isExpanded ? '' : ' collapsed'}" role="group">`;
+      html += `<div class="bookmark-children toc-children${isExpanded ? '' : ' collapsed'}" role="group">`;
       for (const child of section.children) {
         html += buildBookmarkRow(child, true);
       }

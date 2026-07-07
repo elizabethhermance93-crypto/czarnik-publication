@@ -780,6 +780,7 @@ body {
   font-weight: 600;
   background: var(--viewer-surface-muted);
   border-top: 1px solid var(--viewer-border);
+  padding-left: 0;
 
   .toc-section-title {
     font-size: 13.5px;
@@ -787,11 +788,21 @@ body {
   }
 }
 
+.toc-children {
+  margin-left: 28px;
+  padding-left: 1.25rem;
+  border-left: 1px solid rgba(148, 163, 184, 0.35);
+}
+
 .toc-child {
   font-size: 12.5px;
   color: var(--viewer-muted);
-  padding-left: 2rem !important;
+  padding: 6px 12px 6px 1rem;
   margin-left: 0;
+
+  .toc-member-title {
+    padding-left: 0.5rem;
+  }
 }
 
 .toc-member-title {
