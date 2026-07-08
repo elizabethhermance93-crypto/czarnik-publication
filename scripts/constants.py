@@ -18,3 +18,6 @@ IMAGE_EXTENSIONS = ("webp", "png", "jpg", "jpeg")
 # Public web folder for JSON (avoid "data/" — blocked on some hosts)
 PUBLIC_DATA_DIR = "viewer-data"
 LINKS_FILENAME = "links.json"
+AUTHOR_INDEX_FILENAME = "author-index.json"
+AUTHOR_INDEX_XLSX = "AWC_Pubs_1053_TitleAuthor_Pages_v1_2026-07-07.xlsx"
+AUTHOR_INDEX_SHEET = "TitleAuthorPages"

@@ -12,6 +12,7 @@ from pathlib import Path
 import fitz
 
 from constants import (
+    AUTHOR_INDEX_FILENAME,
     EXPECTED_CHILD_COUNT,
     EXPECTED_PARENT_COUNT,
     EXPECTED_PARENT_PAGES,
@@ -28,6 +29,7 @@ PDF_PATH = PROJECT_ROOT / "source" / SOURCE_FILENAME
 OUTLINE_PATH = PROJECT_ROOT / PUBLIC_DATA_DIR / "outline.json"
 MANIFEST_PATH = PROJECT_ROOT / PUBLIC_DATA_DIR / "page-manifest.json"
 LINKS_PATH = PROJECT_ROOT / PUBLIC_DATA_DIR / LINKS_FILENAME
+AUTHOR_INDEX_PATH = PROJECT_ROOT / PUBLIC_DATA_DIR / AUTHOR_INDEX_FILENAME
 FAVICON_PATH = PROJECT_ROOT / "assets" / "img" / "favicon.svg"
 INDEX_PATH = PROJECT_ROOT / "index.html"
 PAGES_DIR = PROJECT_ROOT / "pages"
@@ -304,6 +306,80 @@ def main() -> int:
         )
     else:
         record("FAIL", "TOC hierarchy styles in styles.css", f"Missing: {styles_path}")
+
+    # Author / name index
+    author_data = load_json(AUTHOR_INDEX_PATH)
+    page_count_for_index = 0
+    if manifest_data:
+        page_count_for_index = int(manifest_data.get("document", {}).get("pageCount") or 0)
+    if not page_count_for_index and pdf_page_count:
+        page_count_for_index = pdf_page_count
+
+    if author_data:
+        summary = author_data.get("summary", {})
+        entries = author_data.get("entries", [])
+        authors = author_data.get("authors", [])
+        entry_count = summary.get("entryCount", len(entries))
+        author_count = summary.get("authorCount", len(authors))
+
+        record(
+            "PASS" if entry_count > 0 else "WARN",
+            "author-index.json exists",
+            f"{AUTHOR_INDEX_PATH} ({entry_count} entries)",
+        )
+        record(
+            "PASS" if entry_count > 0 else "WARN",
+            "Author index entry count",
+            f"Author index entries: {entry_count}",
+        )
+        record(
+            "PASS" if author_count > 0 else "WARN",
+            "Author index author count",
+            f"Unique authors: {author_count}",
+        )
+
+        bad_entries = []
+        for entry in entries:
+            if not entry.get("page") or not entry.get("title") or not entry.get("authors"):
+                bad_entries.append(entry.get("id", "?"))
+        if bad_entries:
+            record("FAIL", "Author index entry fields", f"Incomplete entries: {bad_entries[:5]}")
+        else:
+            record("PASS", "Author index entry fields", "All entries have page/title/authors")
+
+        empty_authors = [a.get("name") for a in authors if not a.get("papers")]
+        if empty_authors:
+            record("FAIL", "Author index papers", f"Authors without papers: {empty_authors[:5]}")
+        else:
+            record("PASS", "Author index papers", "Every author has at least one paper")
+
+        if page_count_for_index:
+            out_of_range = [
+                e.get("id")
+                for e in entries
+                if not (1 <= int(e.get("page", 0)) <= page_count_for_index)
+            ]
+            if out_of_range:
+                record(
+                    "WARN",
+                    "Author index page range",
+                    f"{len(out_of_range)} entries outside 1–{page_count_for_index}: {out_of_range[:5]}",
+                )
+            else:
+                record(
+                    "PASS",
+                    "Author index page range",
+                    f"All pages within 1–{page_count_for_index}",
+                )
+
+        print(f"\nAuthor index entries: {entry_count}")
+        print(f"Unique authors: {author_count}")
+    else:
+        record(
+            "WARN",
+            "author-index.json exists",
+            f"Missing: {AUTHOR_INDEX_PATH} (run scripts/extract_author_index.py)",
+        )
 
     # Print report
     print()

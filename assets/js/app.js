@@ -33,6 +33,9 @@
     outlineDoc: null,
     manifest: null,
     links: null,
+    authorIndex: null,
+    authorSearchMode: 'search',
+    authorBrowseAuthor: null,
     imageCache: new Map(),
     prefetchQueue: new Set(),
     isLoading: false,
@@ -872,6 +875,290 @@
     }
   }
 
+  function normalizeSearchText(value) {
+    return String(value || '')
+      .toLowerCase()
+      .replace(/\./g, ' ')
+      .replace(/[^a-z0-9\s\-']/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  function queryTokens(query) {
+    return normalizeSearchText(query).split(' ').filter(Boolean);
+  }
+
+  function textMatchesTokens(haystack, tokens) {
+    if (!tokens.length) return false;
+    const text = normalizeSearchText(haystack);
+    return tokens.every((token) => text.includes(token));
+  }
+
+  function getMatchingAuthors(entry, tokens) {
+    if (!entry?.authors?.length) return [];
+    return entry.authors.filter((name) => {
+      if (textMatchesTokens(name, tokens)) return true;
+      const authorRec = (state.authorIndex?.authors || []).find(
+        (a) => normalizeSearchText(a.name) === normalizeSearchText(name)
+      );
+      if (!authorRec) return false;
+      if (textMatchesTokens(authorRec.searchKey || '', tokens)) return true;
+      return (authorRec.aliases || []).some((alias) => textMatchesTokens(alias, tokens));
+    });
+  }
+
+  function searchAuthorIndex(query, limit = 30) {
+    const tokens = queryTokens(query);
+    if (tokens.length === 0 || !state.authorIndex?.entries) return { results: [], total: 0 };
+
+    const scored = [];
+    for (const entry of state.authorIndex.entries) {
+      const matchedAuthors = getMatchingAuthors(entry, tokens);
+      const titleMatch = textMatchesTokens(entry.title || '', tokens);
+      const searchMatch = textMatchesTokens(entry.searchText || '', tokens);
+      if (!matchedAuthors.length && !titleMatch && !searchMatch) continue;
+
+      let score = 0;
+      if (matchedAuthors.length) score += 100 + matchedAuthors.length * 10;
+      if (titleMatch) score += 40;
+      if (searchMatch) score += 10;
+      if (tokens.length === 1 && matchedAuthors.some((n) => normalizeSearchText(n).endsWith(tokens[0]))) {
+        score += 25;
+      }
+      scored.push({ entry, matchedAuthors, score });
+    }
+
+    scored.sort((a, b) => b.score - a.score || a.entry.page - b.entry.page);
+    return {
+      results: scored.slice(0, limit),
+      total: scored.length,
+    };
+  }
+
+  function openAuthorSearchModal(seedQuery) {
+    if (!els.authorSearchModal) return;
+    const modal = bootstrap.Modal.getOrCreateInstance(els.authorSearchModal);
+    if (typeof seedQuery === 'string' && els.authorSearchInput) {
+      els.authorSearchInput.value = seedQuery;
+      if (els.authorSearchToolbarInput) els.authorSearchToolbarInput.value = seedQuery;
+    }
+    modal.show();
+    setTimeout(() => els.authorSearchInput?.focus(), 250);
+    refreshAuthorSearchResults();
+  }
+
+  function closeAuthorSearchModal() {
+    if (!els.authorSearchModal) return;
+    const modal = bootstrap.Modal.getInstance(els.authorSearchModal);
+    if (modal) modal.hide();
+  }
+
+  function setAuthorSearchMode(mode) {
+    state.authorSearchMode = mode === 'browse' ? 'browse' : 'search';
+    state.authorBrowseAuthor = null;
+    if (els.btnAuthorSearchMode && els.btnAuthorBrowseMode) {
+      const isSearch = state.authorSearchMode === 'search';
+      els.btnAuthorSearchMode.classList.toggle('active', isSearch);
+      els.btnAuthorBrowseMode.classList.toggle('active', !isSearch);
+      els.btnAuthorSearchMode.setAttribute('aria-selected', String(isSearch));
+      els.btnAuthorBrowseMode.setAttribute('aria-selected', String(!isSearch));
+    }
+    if (els.authorSearchInputWrap) {
+      els.authorSearchInputWrap.classList.toggle('d-none', state.authorSearchMode === 'browse');
+    }
+    refreshAuthorSearchResults();
+  }
+
+  function goToAuthorResultPage(page) {
+    closeAuthorSearchModal();
+    goToPage(page, null, { instant: true });
+  }
+
+  function renderAuthorResultItem(item) {
+    const entry = item.entry;
+    const matched = item.matchedAuthors?.length
+      ? item.matchedAuthors.join('; ')
+      : (entry.authors || []).slice(0, 2).join('; ');
+    const allAuthors = (entry.authors || []).join('; ');
+    return `
+      <button type="button" class="author-result" role="listitem" data-page="${entry.page}">
+        <div class="author-result-main">
+          <div class="author-result-match">${escapeHtml(matched || allAuthors)}</div>
+          <div class="author-result-title">${escapeHtml(entry.title || '')}</div>
+          <div class="author-result-authors">${escapeHtml(allAuthors)}</div>
+        </div>
+        <span class="author-result-page">Page ${entry.page}</span>
+      </button>
+    `;
+  }
+
+  function renderAuthorBrowseList() {
+    const authors = state.authorIndex?.authors || [];
+    if (!authors.length) {
+      return '<div class="author-results-empty">No authors found.</div>';
+    }
+    return authors
+      .map(
+        (author) => `
+      <button type="button" class="author-result author-result-browse" role="listitem" data-author-id="${escapeHtml(author.id)}">
+        <div class="author-result-main">
+          <div class="author-result-match">${escapeHtml(author.name)}</div>
+          <div class="author-result-authors">${author.papers?.length || 0} paper${(author.papers?.length || 0) === 1 ? '' : 's'}</div>
+        </div>
+        <span class="author-result-page"><i class="bi bi-chevron-right" aria-hidden="true"></i></span>
+      </button>`
+      )
+      .join('');
+  }
+
+  function renderAuthorPapers(author) {
+    const papers = author?.papers || [];
+    if (!papers.length) {
+      return '<div class="author-results-empty">No papers for this author.</div>';
+    }
+    const back = `
+      <button type="button" class="author-browse-back" id="btnAuthorBrowseBack">
+        <i class="bi bi-arrow-left" aria-hidden="true"></i> All authors
+      </button>
+      <div class="author-browse-heading">${escapeHtml(author.name)}</div>
+    `;
+    const rows = papers
+      .map(
+        (paper) => `
+      <button type="button" class="author-result" role="listitem" data-page="${paper.page}">
+        <div class="author-result-main">
+          <div class="author-result-title">${escapeHtml(paper.title || '')}</div>
+          <div class="author-result-authors">${escapeHtml(author.name)}</div>
+        </div>
+        <span class="author-result-page">Page ${paper.page}</span>
+      </button>`
+      )
+      .join('');
+    return back + rows;
+  }
+
+  function refreshAuthorSearchResults() {
+    if (!els.authorSearchResults || !els.authorSearchStatus) return;
+
+    if (!state.authorIndex) {
+      els.authorSearchStatus.textContent = '';
+      els.authorSearchResults.innerHTML =
+        '<div class="author-results-empty">Author index not available yet.</div>';
+      return;
+    }
+
+    if (state.authorSearchMode === 'browse') {
+      if (state.authorBrowseAuthor) {
+        const author = (state.authorIndex.authors || []).find(
+          (a) => a.id === state.authorBrowseAuthor
+        );
+        els.authorSearchStatus.textContent = author
+          ? `${author.papers?.length || 0} paper${(author.papers?.length || 0) === 1 ? '' : 's'}`
+          : '';
+        els.authorSearchResults.innerHTML = renderAuthorPapers(author);
+      } else {
+        const count = state.authorIndex.authors?.length || 0;
+        els.authorSearchStatus.textContent = `${count} authors — click a name to see papers`;
+        els.authorSearchResults.innerHTML = renderAuthorBrowseList();
+      }
+      bindAuthorResultClicks();
+      return;
+    }
+
+    const query = els.authorSearchInput?.value || '';
+    const tokens = queryTokens(query);
+    if (tokens.join('').length < 2 && query.trim().length < 2) {
+      els.authorSearchStatus.textContent = 'Type at least 2 characters to search.';
+      els.authorSearchResults.innerHTML =
+        '<div class="author-results-empty">Search by author name or paper title.</div>';
+      return;
+    }
+
+    const { results, total } = searchAuthorIndex(query, 30);
+    if (!results.length) {
+      els.authorSearchStatus.textContent = 'No matches';
+      els.authorSearchResults.innerHTML =
+        '<div class="author-results-empty">No authors or papers matched your search.</div>';
+      return;
+    }
+
+    els.authorSearchStatus.textContent =
+      total > results.length
+        ? `Showing first ${results.length} of ${total} results`
+        : `${total} result${total === 1 ? '' : 's'}`;
+    els.authorSearchResults.innerHTML = results.map(renderAuthorResultItem).join('');
+    bindAuthorResultClicks();
+  }
+
+  function bindAuthorResultClicks() {
+    if (!els.authorSearchResults) return;
+    els.authorSearchResults.querySelectorAll('.author-result[data-page]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const page = parseInt(btn.dataset.page, 10);
+        if (!Number.isNaN(page)) goToAuthorResultPage(page);
+      });
+    });
+    els.authorSearchResults.querySelectorAll('.author-result-browse[data-author-id]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        state.authorBrowseAuthor = btn.dataset.authorId;
+        refreshAuthorSearchResults();
+      });
+    });
+    const back = $('btnAuthorBrowseBack');
+    if (back) {
+      back.addEventListener('click', () => {
+        state.authorBrowseAuthor = null;
+        refreshAuthorSearchResults();
+      });
+    }
+  }
+
+  function bindAuthorSearch() {
+    const openFromToolbar = () => {
+      const seed = els.authorSearchToolbarInput?.value || '';
+      openAuthorSearchModal(seed);
+    };
+
+    [els.btnAuthorSearch, els.btnAuthorSearchToolbar, els.menuAuthorSearch].forEach((btn) => {
+      if (btn) btn.addEventListener('click', openFromToolbar);
+    });
+
+    if (els.authorSearchToolbarInput) {
+      els.authorSearchToolbarInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          openAuthorSearchModal(els.authorSearchToolbarInput.value);
+        }
+      });
+    }
+
+    if (els.authorSearchInput) {
+      els.authorSearchInput.addEventListener('input', () => {
+        if (els.authorSearchToolbarInput) {
+          els.authorSearchToolbarInput.value = els.authorSearchInput.value;
+        }
+        refreshAuthorSearchResults();
+      });
+      els.authorSearchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') closeAuthorSearchModal();
+      });
+    }
+
+    if (els.btnAuthorSearchMode) {
+      els.btnAuthorSearchMode.addEventListener('click', () => setAuthorSearchMode('search'));
+    }
+    if (els.btnAuthorBrowseMode) {
+      els.btnAuthorBrowseMode.addEventListener('click', () => setAuthorSearchMode('browse'));
+    }
+
+    if (els.authorSearchModal) {
+      els.authorSearchModal.addEventListener('shown.bs.modal', () => {
+        els.authorSearchInput?.focus();
+        refreshAuthorSearchResults();
+      });
+    }
+  }
+
   function bindBookmarkSearch(input) {
     if (!input) return;
     input.addEventListener('input', () => {
@@ -1214,6 +1501,7 @@
     if (els.menuToggleThumbnails) {
       els.menuToggleThumbnails.addEventListener('click', toggleThumbnails);
     }
+    bindAuthorSearch();
     bindBookmarkSearch(els.bookmarkSearch);
     bindBookmarkSearch(els.bookmarkSearchMobile);
     els.btnCloseBookmarks.addEventListener('click', () => {
@@ -1286,6 +1574,18 @@
     els.pageStream = $('pageStream');
     els.pageStreamLoading = $('pageStreamLoading');
     els.btnSearch = $('btnSearch');
+    els.btnAuthorSearch = $('btnAuthorSearch');
+    els.btnAuthorSearchToolbar = $('btnAuthorSearchToolbar');
+    els.menuAuthorSearch = $('menuAuthorSearch');
+    els.authorSearchBox = $('authorSearchBox');
+    els.authorSearchToolbarInput = $('authorSearchToolbarInput');
+    els.authorSearchModal = $('authorSearchModal');
+    els.authorSearchInput = $('authorSearchInput');
+    els.authorSearchInputWrap = document.querySelector('.author-search-input-wrap');
+    els.authorSearchResults = $('authorSearchResults');
+    els.authorSearchStatus = $('authorSearchStatus');
+    els.btnAuthorSearchMode = $('btnAuthorSearchMode');
+    els.btnAuthorBrowseMode = $('btnAuthorBrowseMode');
     els.btnThemeToggle = $('btnThemeToggle');
     els.menuToggleThumbnails = $('menuToggleThumbnails');
     els.bookmarkSearch = $('bookmarkSearch');
@@ -1365,6 +1665,13 @@
     } catch (err) {
       console.warn('links.json not found — link overlays disabled', err);
       state.links = null;
+    }
+
+    try {
+      state.authorIndex = await fetchJsonFromDataDirs('author-index.json');
+    } catch (err) {
+      console.warn('author-index.json not found — author search disabled', err);
+      state.authorIndex = null;
     }
 
     state.pageCount = derivePageCount();

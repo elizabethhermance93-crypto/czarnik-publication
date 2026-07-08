@@ -259,6 +259,7 @@ Recommended: static hosting + CDN for images.
 Upload `index.html`, `assets/`, `viewer-data/`, `pages/`, `thumbs/`, and `robots.txt`. Do **not** upload `source/`.
 
 After running link extraction (Phase 4), include `viewer-data/links.json` in the deploy bundle.
+After running author index extraction, include `viewer-data/author-index.json` as well.
 
 **Important:** The JSON folder must be named `viewer-data/` on the server (not `data/` — some hosts block that path). Verify in your browser:
 
@@ -334,6 +335,55 @@ python scripts/qa_check.py
 ```
 
 Deploy must include `viewer-data/links.json` after extraction.
+
+---
+
+## Author Search / Name Index
+
+Former students and collaborators can search by author name or paper title and jump to the matching page.
+
+### Source spreadsheet
+
+Place the Excel file at one of:
+
+- `resources/AWC_Pubs_1053_TitleAuthor_Pages_v1_2026-07-07.xlsx` (preferred)
+- `resource/AWC_Pubs_1053_TitleAuthor_Pages_v1_2026-07-07.xlsx`
+- `source/AWC_Pubs_1053_TitleAuthor_Pages_v1_2026-07-07.xlsx` (fallback)
+
+Sheet: **TitleAuthorPages**
+
+| Column | Header |
+|--------|--------|
+| A | Page |
+| B | Names |
+| C | Paper Title |
+
+Names in column B are semicolon-separated (for example `Anthony W. Czarnik; Nelson J. Leonard`).
+
+### Generate the index
+
+```bash
+python -m pip install -r scripts/requirements.txt
+python scripts/extract_author_index.py
+```
+
+This writes `viewer-data/author-index.json` (same public data folder as `outline.json` / `links.json`).
+
+### QA and local test
+
+```bash
+python scripts/qa_check.py
+python -m http.server 8000
+```
+
+Open [http://localhost:8000](http://localhost:8000), then use **Search Authors / Papers** (toolbar input on large screens, person icon, or More → Author / paper search).
+
+### Behavior notes
+
+- Search matches author names, aliases (initials, last name, etc.), and paper titles.
+- Results are paper-based; clicking a result jumps to that page with the existing viewer navigation.
+- The spreadsheet and source PDF are not exposed publicly. Search does not modify page images or the PDF.
+- Deploy must include `viewer-data/author-index.json` after extraction. If the file is missing, search shows “Author index not available yet” and the viewer still works.
 
 ---
 
